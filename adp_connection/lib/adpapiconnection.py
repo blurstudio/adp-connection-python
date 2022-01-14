@@ -18,12 +18,13 @@
 # express or implied.  See the License for the specific language
 # governing permissions and limitations under the License.
 
+from __future__ import absolute_import
 import requests
 import datetime
 import uuid
 import logging
-from connectexceptions import *
-from connectionconfiguration import *
+from .connectexceptions import *
+from .connectionconfiguration import *
 from adp_connection import __version__
 
 
@@ -35,10 +36,11 @@ class ADPAPIConnection(object):
     connectionConfiguration: instance of the ConnectionConfiguration class
     that was used to instantiate the connection """
 
-    connection = {'status': 'availabe', 'type': 'unknown', 'token': '',
+    connection = {'status': 'available', 'type': 'unknown', 'token': '',
                   'expires': '', 'sessionState': ''}
     connectionConfiguration = None
     userAgent = 'adp-userinfo-python/' + __version__
+    lastEventId = None
 
     def isConnectedIndicator(self):
         """ Returns: a boolen depending on whether the connection
@@ -115,7 +117,127 @@ class ADPAPIConnection(object):
                              headers=(headers))
             logging.debug(r.status_code)
         self.connection = {'status': 'ready', 'type': 'unknown', 'token': '',
-                           'expires': '', 'state': ''}
+                           'expires': '', 'sessionState': ''}
+
+    def reconnect(self, url, method, headers={}, params={}, data={}):
+        """Reconnect to ADP API after token expiration."""
+        self.disconnect()
+        self.connect()
+        return self.request(url, method=method, headers=headers, params=params, data=data)
+
+    def request(self, url, method='get', headers={}, params={}, data={}):
+        """Expose an HTTP Requests object configured to work with the ADP API connection.
+        Attempt an authenticated request to the ADP API.  Pass access token and
+        TLS certificate to configure bearer token authentication for request. Connect to
+        ADP automatically.  Attempt to reconnect when token expiration is detected.
+
+        Args:
+            url (str): The API url endpoint.
+            method (str): The HTTP method: 'get', 'post', or 'delete' are supported.
+            headers (dict): Additional http headers to supply with the request.
+            params (dict): Query string parameters for the request.
+            data (dict): POST variables for the request.
+
+        Returns:
+            The HTTP Requests object containing the http result object.
+        """
+        if not self.isConnectedIndicator():
+            self.connect()
+
+        headers['Authorization'] = 'Bearer {}'.format(self.getAccessToken())
+        if 'roleCode' not in headers.keys():
+            headers['roleCode'] = 'practitioner'
+        cert = (
+            self.getConfig().getSSLCertPath(),
+            self.getConfig().getSSLKeyPath(),
+        )
+        requestKwargs = {
+            'headers': headers,
+            'verify': False,
+            'cert': cert,
+        }
+        if method == 'post' and data:
+            requestKwargs['data'] = data
+
+        if method in ['get', 'post'] and params:
+            requestKwargs['params'] = params
+
+        apiUrl = self.connectionConfiguration.getApiRequestURL()
+        requestUrl = '{}/{}'.format(apiUrl, url)
+
+        requestMethod = getattr(requests, method)
+        res = requestMethod(requestUrl, **requestKwargs)
+
+        # Attempt reconnect when response is 401 - Unauthorized and token is expired.
+        if res.status_code == 401 and self.getExpiration() <= datetime.datetime.now():
+            return self.reconnect(url, method, headers, params, data)
+
+        return res
+
+    def loadEvent(self, delete=False, longPoll=True):
+        """ Load the next event notification from the ADP API event notification
+        system.  Notifications function as a first-in-first-out queue.
+
+        Keyword arguments:
+        delete -- Whether to delete the last notification after retrieval.  If True,
+          each call to this method will retrieve a new event notification, since the
+          notifications are deleted upon retrieval.  If False, a subsequent call to
+          ADPAPIConnection.deleteLastEvent() is needed to increment the queue and
+          return the next event.
+        longPoll -- Whether to use the HTTP long polling functionality, where the
+        request will hang for 15 seconds waiting for an event.  If no event is
+        returned after this interval, the response is returned.
+
+        Returns:
+        A Requests object containing the http response.
+        """
+        endpoint = 'core/v1/event-notification-messages'
+        headers = {}
+        messageIdKey = 'adp-msg-msgid'
+        if longPoll:
+            headers['prefer'] = '/adp/long-polling'
+
+        result = self.get(endpoint, headers=headers)
+
+        if result.status_code == 200:
+            messageId = result.headers[messageIdKey]
+            logging.debug('Event message ID: {}'.format(messageId))
+            self.lastEventId = messageId
+            if delete:
+                self.deleteLastEvent(eventId=messageId)
+        return result
+
+    def deleteLastEvent(self, eventId=None):
+        """Delete the last event notification to provide the next one in the
+        queue.  Use the supplied event ID, or check for a previously stored
+        event ID if one is not supplied."""
+        endpoint = 'core/v1/event-notification-messages/{}'
+        if eventId is None:
+            lastEventId = self.lastEventId
+        else:
+            lastEventId = eventId
+        if lastEventId is None:
+            raise ValueError("No event ID was provided.")
+
+        logging.debug('Deleting Event message ID: {}'.format(lastEventId))
+        deleteUrl = endpoint.format(lastEventId)
+        deleteResult = self.delete(deleteUrl)
+        if deleteResult.status_code == 200:
+            self.lastEventId = None
+        else:
+            logging.debug('Unable to delete event {}'.format(lastEventId))
+
+    def get(self, url, headers={}, params={}):
+        """ Convenience method for creating HTTP GET requests"""
+        return self.request(url, headers=headers, params=params)
+
+    def post(self, url, headers={}, params={}, data={}):
+        """ Convenience method for creating HTTP POST requests"""
+        return self.request(url, method='post', headers=headers, params=params, data=data)
+
+    def delete(self, url, headers={}):
+        """ Convenience method for creating HTTP DELETE requests"""
+        return self.request(url, method='delete', headers=headers)
 
 
 class ClientCredentialsConnection(ADPAPIConnection):

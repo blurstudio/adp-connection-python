@@ -93,7 +93,20 @@ config['grantType'] = 'client_credentials'
 # Since the grant type is client_credentials a
 # ClientCredentialsConfiguration object is returned
 try:
+
+    # To load configuration at runtime, pass the config dictionary argument to
+    # the ConnectionConfiguration:
     ClientCredentialsConfiguration = ConnectionConfiguration().init(config)
+
+    # Note: The configuration can also be loaded from an INI config file. The
+    # default location for the config file is $HOME/adp_connection.ini. A
+    # custom location for the config file can be specified by setting the
+    # ADP_CONNECTION_CONFIG environment variable.
+
+    # To load a configuration object from a INI config file, initialize the
+    # ConnectionConfiguration without a config dictionary:
+
+    # ClientCredentialsConfiguration = ConnectionConfiguration().init()
 
     # Using the new configuration object create a connection
     ccConnection = ADPAPIConnectionFactory().createConnection(ClientCredentialsConfiguration)

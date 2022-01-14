@@ -18,8 +18,11 @@
 # express or implied.  See the License for the specific language
 # governing permissions and limitations under the License.
 
+from __future__ import absolute_import
 import logging
-from connectexceptions import *
+import os
+import configparser
+from .connectexceptions import *
 
 
 class ConnectionConfiguration(object):
@@ -33,6 +36,8 @@ class ConnectionConfiguration(object):
 
     config = dict({})
     initDone = False
+    CONF_SECTION_KEY = 'ADP Connection'
+    CONF_FILENAME = 'adp_connection.ini'
 
     def __init__(self):
         """ Initialize the dictionary keys:
@@ -102,14 +107,20 @@ class ConnectionConfiguration(object):
     def getGrantType(self):
         return self.config['grantType']
 
-    def init(self, configObj):
+    def init(self, configObj=None):
         """ Method to initialize the common config parameters:
         clientID, clientSecret, sslCertPath, sslKeyPath,
         tokenServerURL, apiRequestURL, disconnectURL and grantType.
 
+        Load  and validate config from supplied dictionary.  If no config is
+        present at runtime, check for a local config file.
+
         Attributes:
         configObj: dictionary containing the config values to be
         initialized. """
+
+        if configObj is None:
+            configObj = self.attemptConfigFile()
 
         logging.debug('Initializing Config Object')
         if ('clientID' in configObj):
@@ -165,6 +176,39 @@ class ConnectionConfiguration(object):
             logging.debug('Conf Error: ' + Error.errDict['grantTypeBad']['errCode'] + ': ' + Error.errDict['grantTypeBad']['errMsg'])
             raise ConfigError(self.__class__.__name__, Error.errDict['grantTypeBad']['errCode'], Error.errDict['grantTypeBad']['errMsg'])
 
+    def attemptConfigFile(self):
+        """Attempt to locate and parse an INI configuration file to configure ADP
+        client connection. Check for an ADP_CONNECTION_CONFIG environment variable
+        containing the filesystem location for config file.  If no environment variable
+        is present, check for a configuration file in the user's home directory."""
+        homeDirectory = os.path.expanduser('~')
+        defaultName = self.CONF_FILENAME
+        defaultLocation = os.path.join(homeDirectory, defaultName)
+        confFileLocation = os.getenv('ADP_CONNECTION_CONFIG')
+
+        if confFileLocation is None:
+            confFileLocation = defaultLocation
+
+        if not os.path.exists(confFileLocation):
+            raise ConfigError(
+                self.__class__.__name__,
+                Error.errDict['configFileNotFound']['errCode'],
+                Error.errDict['configFileNotFound']['errMsg'].format(confFileLocation),
+            )
+
+        logging.debug('Loading config file: {}..'.format(confFileLocation))
+        confParser = configparser.ConfigParser()
+        confParser.read(confFileLocation)
+
+        config = dict()
+        for field in self.config.keys():
+            fileField = confParser.get(self.CONF_SECTION_KEY, field, fallback=None)
+            if fileField:
+                config[field] = fileField
+            else:
+                config[field] = self.config[field]
+        logging.debug('Successfully loaded config file.')
+        return config
 
 class ClientCredentialsConfiguration(ConnectionConfiguration):
     """ Client credentials sub class of the ConnectionConfiguration object """
