@@ -36,7 +36,7 @@ class ADPAPIConnection(object):
     connectionConfiguration: instance of the ConnectionConfiguration class
     that was used to instantiate the connection """
 
-    connection = {'status': 'availabe', 'type': 'unknown', 'token': '',
+    connection = {'status': 'available', 'type': 'unknown', 'token': '',
                   'expires': '', 'sessionState': ''}
     connectionConfiguration = None
     userAgent = 'adp-userinfo-python/' + __version__
@@ -117,6 +117,73 @@ class ADPAPIConnection(object):
             logging.debug(r.status_code)
         self.connection = {'status': 'ready', 'type': 'unknown', 'token': '',
                            'expires': '', 'sessionState': ''}
+
+    def reconnect(self, url, method, headers={}, params={}, data={}):
+        """Reconnect to ADP API after token expiration."""
+        self.disconnect()
+        self.connect()
+        return self.request(url, method=method, headers=headers, params=params, data=data)
+
+    def request(self, url, method='get', headers={}, params={}, data={}):
+        """Expose an HTTP Requests object configured to work with the ADP API connection.
+        Attempt an authenticated request to the ADP API.  Pass access token and
+        TLS certificate to configure bearer token authentication for request. Connect to
+        ADP automatically.  Attempt to reconnect when token expiration is detected.
+
+        Args:
+            url (str): The API url endpoint.
+            method (str): The HTTP method: 'get', 'post', or 'delete' are supported.
+            headers (dict): Additional http headers to supply with the request.
+            params (dict): Query string parameters for the request.
+            data (dict): POST variables for the request.
+
+        Returns:
+            The HTTP Requests object containing the http result object.
+        """
+        if not self.isConnectedIndicator():
+            self.connect()
+
+        headers['Authorization'] = 'Bearer {}'.format(self.getAccessToken())
+        if 'roleCode' not in headers.keys():
+            headers['roleCode'] = 'practitioner'
+        cert = (
+            self.getConfig().getSSLCertPath(),
+            self.getConfig().getSSLKeyPath(),
+        )
+        requestKwargs = {
+            'headers': headers,
+            'verify': False,
+            'cert': cert,
+        }
+        if method == 'post' and data:
+            requestKwargs['data'] = data
+
+        if method in ['get', 'post'] and params:
+            requestKwargs['params'] = params
+
+        apiUrl = self.connectionConfiguration.getApiRequestURL()
+        requestUrl = '{}/{}'.format(apiUrl, url)
+
+        requestMethod = getattr(requests, method)
+        res = requestMethod(requestUrl, **requestKwargs)
+
+        # Attempt reconnect when response is 401 - Unauthorized and token is expired.
+        if res.status_code == 401 and self.getExpiration() <= datetime.datetime.now():
+            return self.reconnect(url, method, headers, params, data)
+
+        return res
+
+    def get(self, url, headers={}, params={}):
+        """ Convenience method for creating HTTP GET requests"""
+        return self.request(url, headers=headers, params=params)
+
+    def post(self, url, headers={}, params={}, data={}):
+        """ Convenience method for creating HTTP POST requests"""
+        return self.request(url, method='post', headers=headers, params=params, data=data)
+
+    def delete(self, url, headers={}):
+        """ Convenience method for creating HTTP DELETE requests"""
+        return self.request(url, method='delete', headers=headers)
 
 
 class ClientCredentialsConnection(ADPAPIConnection):
