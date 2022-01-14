@@ -18,6 +18,7 @@
 # express or implied.  See the License for the specific language
 # governing permissions and limitations under the License.
 
+from __future__ import absolute_import
 from setuptools import setup, find_packages
 from adp_connection import __version__
 
@@ -51,7 +52,10 @@ A library to help connect to ADP using Openid-Connect and OAuth 2.0
         'License :: OSI Approved :: Apache Software License',
         'Natural Language :: English',
         'Operating System :: Unix',
+        'Programming Language :: Python :: 2',
         'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: Implementation :: PyPy',
         'Operating System :: OS Independent',
     ],

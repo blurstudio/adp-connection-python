@@ -18,8 +18,9 @@
 # express or implied.  See the License for the specific language
 # governing permissions and limitations under the License.
 
+from __future__ import absolute_import
 from preggy import expect
-from urlparse import urlparse, parse_qs
+from six.moves.urllib.parse import urlparse, parse_qs
 from adp_connection.lib import *
 from tests.base import TestCase
 
