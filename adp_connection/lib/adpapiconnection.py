@@ -116,7 +116,7 @@ class ADPAPIConnection(object):
                              headers=(headers))
             logging.debug(r.status_code)
         self.connection = {'status': 'ready', 'type': 'unknown', 'token': '',
-                           'expires': '', 'state': ''}
+                           'expires': '', 'sessionState': ''}
 
 
 class ClientCredentialsConnection(ADPAPIConnection):
