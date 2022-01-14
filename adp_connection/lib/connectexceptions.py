@@ -45,6 +45,7 @@ class Error(Exception):
     errDict['responseTypeBad'] = {'errCode': 'ConfErr-013', 'errMsg': 'incorrect responseType'}
     errDict['scopeBad'] = {'errCode': 'ConfErr-013', 'errMsg': 'incorrect scope'}
     errDict['initBad'] = {'errCode': 'ConfErr-014', 'errMsg': 'configuration not inited'}
+    errDict['configFileNotFound'] = {'errCode': 'ConfErr-015', 'errMsg': 'Unable to load configuration file from {}'}
 
     def __init__(self, cname, code, msg):
         self.cname = cname
